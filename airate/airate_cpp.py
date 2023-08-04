@@ -14,13 +14,11 @@ def setup_clang():
         return
     already_setup = True
 
-    # Find the Clang library file using ctypes.util.find_library()
-    libclang_path = ctypes.util.find_library('clang')
-    if not libclang_path:
+    if libclang_path := ctypes.util.find_library('clang'):
+        # Set the path to the Clang library
+        clang.cindex.Config.set_library_file(libclang_path)
+    else:
         raise RuntimeError('Failed to find Clang library')
-
-    # Set the path to the Clang library
-    clang.cindex.Config.set_library_file(libclang_path)
 
 def functions_in_file(cursor, file_path):
     if cursor.kind == clang.cindex.CursorKind.CXX_METHOD:
@@ -65,11 +63,10 @@ def extract_functions(file_path):
     with open(file_path, 'r') as f:
         file_contents = f.read()
 
-    code_blocks = []
-    for func in functions_in_file(tu.cursor, file_path):
-        code_blocks.append(function_source(func, file_contents))
-
-    return code_blocks
+    return [
+        function_source(func, file_contents)
+        for func in functions_in_file(tu.cursor, file_path)
+    ]
 
 def airate_cpp(file_path, node="localhost", port=5000):
     markdown_str = ""

@@ -5,8 +5,7 @@ def extract_functions_and_classes(file_path: str) -> list[str]:
     with open(file_path, "r") as file:
         code = file.read()
     pattern = r"((async\s+)?function\s+\w+\s*\(.*?\)\s*\{(?:[^{}]*?\{[^{}]*?\}[^{}]*?)*?\}|class\s+\w+\s*\{[\s\S]*?\})"
-    matches = re.findall(pattern, code, re.MULTILINE)
-    return matches
+    return re.findall(pattern, code, re.MULTILINE)
 
 def airate_ts(file_path, node="localhost", port=5000):
     markdown_str = ""

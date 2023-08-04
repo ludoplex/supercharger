@@ -1,10 +1,7 @@
 # Prompt engineering to improve the odds that the LLM produces useful output
 
 def has_system_role(messages):
-    for message in messages:
-        if message["role"] == "system":
-            return True
-    return False
+    return any(message["role"] == "system" for message in messages)
 
 def normalize_role(role):
     return f"{role.capitalize()}"

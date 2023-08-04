@@ -45,8 +45,7 @@ def get_script_path():
 
 def replace_filename_with_run_server(path):
     dir_path = os.path.dirname(path)
-    new_path = os.path.join(dir_path, "_cluster_launch.sh")
-    return new_path
+    return os.path.join(dir_path, "_cluster_launch.sh")
 
 def main():
     node_addresses = read_node_addresses()

@@ -7,10 +7,9 @@ from model_vicuna import load_model_vicuna
 from model_llama import load_model_llama
 
 def is_array_of_strings(input_array):
-    if isinstance(input_array, list) and all(isinstance(element, str) for element in input_array):
-        return True
-    else:
-        return False
+    return isinstance(input_array, list) and all(
+        isinstance(element, str) for element in input_array
+    )
 
 class LanguageModel:
     def __init__(self, model_name="baize-30b", load_in_8bit=True):
@@ -46,8 +45,6 @@ class LanguageModel:
                 if i == 0:
                     input_tensor = input_ids.cuda()
                     out = self.model(input_tensor, use_cache=True)
-                    logits = out.logits
-                    past_key_values = out.past_key_values
                 else:
                     input_tensor = torch.as_tensor([[token]], device="cuda")
                     attention_mask = torch.ones(
@@ -56,9 +53,8 @@ class LanguageModel:
                                 use_cache=True,
                                 attention_mask=attention_mask,
                                 past_key_values=past_key_values)
-                    logits = out.logits
-                    past_key_values = out.past_key_values
-
+                past_key_values = out.past_key_values
+                logits = out.logits
                 last_token_logits = logits[0][-1]
                 if temperature < 1e-4:
                     token = int(torch.argmax(last_token_logits))
@@ -68,11 +64,7 @@ class LanguageModel:
 
                 output_ids.append(token)
 
-                if token == self.tokenizer.eos_token_id:
-                    stopped = True
-                else:
-                    stopped = False
-
+                stopped = token == self.tokenizer.eos_token_id
                 if i%2 == 0 or i == max_new_tokens - 1 or stopped:
                     output = self.tokenizer.decode(output_ids, skip_special_tokens=True)
 

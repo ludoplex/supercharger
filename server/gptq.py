@@ -87,8 +87,8 @@ class Autotuner(triton.KernelInterface):
 			# This reduces the amount of autotuning by rounding the keys to the nearest power of two
 			# In my testing this gives decent results, and greatly reduces the amount of tuning required
 			if self.nearest_power_of_two:
-				key = tuple([2 ** int(math.log2(x) + 0.5) for x in key])
-			
+				key = tuple(2 ** int(math.log2(x) + 0.5) for x in key)
+
 			if key not in self.cache:
 				# prune configs
 				pruned_configs = self.prune_configs(kwargs)
@@ -213,7 +213,6 @@ def matmul4_kernel_config_pruner(configs, nargs):
         'top_k': None,
     },
 )
-
 @triton.jit
 def matmul_248_kernel(a_ptr, b_ptr, c_ptr,
                         scales_ptr, zeros_ptr, g_ptr,
@@ -224,7 +223,7 @@ def matmul_248_kernel(a_ptr, b_ptr, c_ptr,
                         stride_scales, stride_zeros,
                         BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
                         GROUP_SIZE_M: tl.constexpr):
-    """
+	"""
     Compute the matrix multiplication C = A x B.
     A is of shape (M, K) float16
     B is of shape (K//8, N) int32
@@ -233,61 +232,61 @@ def matmul_248_kernel(a_ptr, b_ptr, c_ptr,
     zeros is of shape (G, N) float16
     g_ptr is of shape (K) int32 
     """
-    infearure_per_bits = 32 // bits
+	infearure_per_bits = 32 // bits
 
-    pid = tl.program_id(axis=0)
-    num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
-    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
-    num_pid_k = tl.cdiv(K, BLOCK_SIZE_K)
-    num_pid_in_group = GROUP_SIZE_M * num_pid_n
-    group_id = pid // num_pid_in_group
-    first_pid_m = group_id * GROUP_SIZE_M
-    group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
-    pid_m = first_pid_m + (pid % group_size_m)
-    pid_n = (pid % num_pid_in_group) // group_size_m
+	pid = tl.program_id(axis=0)
+	num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
+	num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
+	num_pid_k = tl.cdiv(K, BLOCK_SIZE_K)
+	num_pid_in_group = GROUP_SIZE_M * num_pid_n
+	group_id = pid // num_pid_in_group
+	first_pid_m = group_id * GROUP_SIZE_M
+	group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
+	pid_m = first_pid_m + (pid % group_size_m)
+	pid_n = (pid % num_pid_in_group) // group_size_m
 
-    offs_am = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    offs_bn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
-    offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)   # (BLOCK_SIZE_M, BLOCK_SIZE_K)
-    a_mask = (offs_am[:, None] < M)
-    # b_ptrs is set up such that it repeats elements along the K axis 8 times
-    b_ptrs = b_ptr + ((offs_k[:, None] // infearure_per_bits) * stride_bk + offs_bn[None, :] * stride_bn)   # (BLOCK_SIZE_K, BLOCK_SIZE_N)
-    g_ptrs = g_ptr + offs_k
-    # shifter is used to extract the N bits of each element in the 32-bit word from B
-    scales_ptrs = scales_ptr + offs_bn[None, :]
-    zeros_ptrs = zeros_ptr + (offs_bn[None, :]// infearure_per_bits) 
-    
-    shifter = (offs_k % infearure_per_bits) * bits
-    zeros_shifter = (offs_bn % infearure_per_bits) * bits
-    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-            
-    for k in range(0, num_pid_k):
-        g_idx = tl.load(g_ptrs)
+	offs_am = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+	offs_bn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+	offs_k = tl.arange(0, BLOCK_SIZE_K)
+	a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)   # (BLOCK_SIZE_M, BLOCK_SIZE_K)
+	a_mask = (offs_am[:, None] < M)
+	# b_ptrs is set up such that it repeats elements along the K axis 8 times
+	b_ptrs = b_ptr + ((offs_k[:, None] // infearure_per_bits) * stride_bk + offs_bn[None, :] * stride_bn)   # (BLOCK_SIZE_K, BLOCK_SIZE_N)
+	g_ptrs = g_ptr + offs_k
+	# shifter is used to extract the N bits of each element in the 32-bit word from B
+	scales_ptrs = scales_ptr + offs_bn[None, :]
+	zeros_ptrs = zeros_ptr + (offs_bn[None, :]// infearure_per_bits) 
 
-        # Fetch scales and zeros; these are per-outfeature and thus reused in the inner loop
-        scales = tl.load(scales_ptrs + g_idx[:, None] * stride_scales)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
-        zeros = tl.load(zeros_ptrs + g_idx[:, None] * stride_zeros)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
-        
-        zeros = (zeros >> zeros_shifter[None, :]) & maxq
-        zeros = (zeros + 1)
-        
-        a = tl.load(a_ptrs, mask=a_mask, other=0.)   # (BLOCK_SIZE_M, BLOCK_SIZE_K)
-        b = tl.load(b_ptrs)   # (BLOCK_SIZE_K, BLOCK_SIZE_N), but repeated
+	shifter = (offs_k % infearure_per_bits) * bits
+	zeros_shifter = (offs_bn % infearure_per_bits) * bits
+	accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 
-        # Now we need to unpack b (which is N-bit values) into 32-bit values
-        b = (b >> shifter[:, None]) & maxq  # Extract the N-bit values
-        b = (b - zeros) * scales  # Scale and shift
+	for _ in range(0, num_pid_k):
+		g_idx = tl.load(g_ptrs)
 
-        accumulator += tl.dot(a, b)
-        a_ptrs += BLOCK_SIZE_K
-        b_ptrs += (BLOCK_SIZE_K // infearure_per_bits) * stride_bk
-        g_ptrs += BLOCK_SIZE_K
+		# Fetch scales and zeros; these are per-outfeature and thus reused in the inner loop
+		scales = tl.load(scales_ptrs + g_idx[:, None] * stride_scales)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
+		zeros = tl.load(zeros_ptrs + g_idx[:, None] * stride_zeros)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
 
-    c = accumulator.to(tl.float16)
-    c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bn[None, :]
-    c_mask = (offs_am[:, None] < M) & (offs_bn[None, :] < N)
-    tl.store(c_ptrs, accumulator, mask=c_mask)
+		zeros = (zeros >> zeros_shifter[None, :]) & maxq
+		zeros = (zeros + 1)
+
+		a = tl.load(a_ptrs, mask=a_mask, other=0.)   # (BLOCK_SIZE_M, BLOCK_SIZE_K)
+		b = tl.load(b_ptrs)   # (BLOCK_SIZE_K, BLOCK_SIZE_N), but repeated
+
+		# Now we need to unpack b (which is N-bit values) into 32-bit values
+		b = (b >> shifter[:, None]) & maxq  # Extract the N-bit values
+		b = (b - zeros) * scales  # Scale and shift
+
+		accumulator += tl.dot(a, b)
+		a_ptrs += BLOCK_SIZE_K
+		b_ptrs += (BLOCK_SIZE_K // infearure_per_bits) * stride_bk
+		g_ptrs += BLOCK_SIZE_K
+
+	c = accumulator.to(tl.float16)
+	c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bn[None, :]
+	c_mask = (offs_am[:, None] < M) & (offs_bn[None, :] < N)
+	tl.store(c_ptrs, accumulator, mask=c_mask)
 
 # code based https://github.com/fpgaminer/GPTQ-triton
 def transpose_matmul4_kernel_config_pruner(configs, nargs):
@@ -330,7 +329,6 @@ def transpose_matmul4_kernel_config_pruner(configs, nargs):
         'top_k': None,
     },
 )
-
 @triton.jit
 def transpose_matmul_248_kernel(a_ptr, b_ptr, c_ptr,
                                 scales_ptr, zeros_ptr, g_ptr,
@@ -341,7 +339,7 @@ def transpose_matmul_248_kernel(a_ptr, b_ptr, c_ptr,
                                 stride_scales, stride_zeros,
                                 BLOCK_SIZE_M: tl.constexpr, BLOCK_SIZE_N: tl.constexpr, BLOCK_SIZE_K: tl.constexpr,
                                 GROUP_SIZE_M: tl.constexpr):
-    """
+	"""
     Compute the matrix multiplication C = A x B.
     A is of shape (M, N) float16
     B is of shape (K//8, N) int32
@@ -350,63 +348,63 @@ def transpose_matmul_248_kernel(a_ptr, b_ptr, c_ptr,
     zeros is of shape (G, N) float16
     g_ptr is of shape (K) int32 
     """
-    infearure_per_bits = 32 // bits
+	infearure_per_bits = 32 // bits
 
-    pid = tl.program_id(axis=0)
-    num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
-    num_pid_k = tl.cdiv(K, BLOCK_SIZE_K)
-    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
-    num_pid_in_group = GROUP_SIZE_M * num_pid_k
-    group_id = pid // num_pid_in_group
-    first_pid_m = group_id * GROUP_SIZE_M
-    group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
-    pid_m = first_pid_m + (pid % group_size_m)
-    pid_k = (pid % num_pid_in_group) // group_size_m
+	pid = tl.program_id(axis=0)
+	num_pid_m = tl.cdiv(M, BLOCK_SIZE_M)
+	num_pid_k = tl.cdiv(K, BLOCK_SIZE_K)
+	num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
+	num_pid_in_group = GROUP_SIZE_M * num_pid_k
+	group_id = pid // num_pid_in_group
+	first_pid_m = group_id * GROUP_SIZE_M
+	group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
+	pid_m = first_pid_m + (pid % group_size_m)
+	pid_k = (pid % num_pid_in_group) // group_size_m
 
-    offs_am = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    offs_bk = pid_k * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
-    offs_n = tl.arange(0, BLOCK_SIZE_N)
-    a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_n[None, :] * stride_ak)   # (BLOCK_SIZE_M, BLOCK_SIZE_N)
-    a_mask = (offs_am[:, None] < M)
-    # b_ptrs is set up such that it repeats elements along the K axis 8 times
-    b_ptrs = b_ptr + ((offs_bk[:, None] // infearure_per_bits) * stride_bk + offs_n[None, :] * stride_bn)   # (BLOCK_SIZE_K, BLOCK_SIZE_N)
-    g_ptrs = g_ptr + offs_bk
-    g_idx = tl.load(g_ptrs)
-    
-    # shifter is used to extract the N bits of each element in the 32-bit word from B
-    scales_ptrs = scales_ptr + offs_n[None, :]  + g_idx[:, None] * stride_scales
-    zeros_ptrs = zeros_ptr + (offs_n[None, :]// infearure_per_bits) + g_idx[:, None] * stride_zeros
-    
-    shifter = (offs_bk % infearure_per_bits) * bits
-    zeros_shifter = (offs_n % infearure_per_bits) * bits
-    accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
-    
-    for k in range(0, num_pid_n):
-        # Fetch scales and zeros; these are per-outfeature and thus reused in the inner loop
-        scales = tl.load(scales_ptrs)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
-        zeros = tl.load(zeros_ptrs)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
-        
-        zeros = (zeros >> zeros_shifter[None, :]) & maxq
-        zeros = (zeros + 1)
-        
-        a = tl.load(a_ptrs, mask=a_mask, other=0.)   # (BLOCK_SIZE_M, BLOCK_SIZE_N)
-        b = tl.load(b_ptrs)   # (BLOCK_SIZE_K, BLOCK_SIZE_N), but repeated
+	offs_am = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+	offs_bk = pid_k * BLOCK_SIZE_K + tl.arange(0, BLOCK_SIZE_K)
+	offs_n = tl.arange(0, BLOCK_SIZE_N)
+	a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_n[None, :] * stride_ak)   # (BLOCK_SIZE_M, BLOCK_SIZE_N)
+	a_mask = (offs_am[:, None] < M)
+	# b_ptrs is set up such that it repeats elements along the K axis 8 times
+	b_ptrs = b_ptr + ((offs_bk[:, None] // infearure_per_bits) * stride_bk + offs_n[None, :] * stride_bn)   # (BLOCK_SIZE_K, BLOCK_SIZE_N)
+	g_ptrs = g_ptr + offs_bk
+	g_idx = tl.load(g_ptrs)
 
-        # Now we need to unpack b (which is N-bit values) into 32-bit values
-        b = (b >> shifter[:, None]) & maxq  # Extract the N-bit values
-        b = (b - zeros) * scales  # Scale and shift
-        b = tl.trans(b)
+	# shifter is used to extract the N bits of each element in the 32-bit word from B
+	scales_ptrs = scales_ptr + offs_n[None, :]  + g_idx[:, None] * stride_scales
+	zeros_ptrs = zeros_ptr + (offs_n[None, :]// infearure_per_bits) + g_idx[:, None] * stride_zeros
 
-        accumulator += tl.dot(a, b)
-        a_ptrs += BLOCK_SIZE_N
-        b_ptrs += BLOCK_SIZE_N
-        scales_ptrs += BLOCK_SIZE_N
-        zeros_ptrs += (BLOCK_SIZE_N // infearure_per_bits)
-        
-    c = accumulator.to(tl.float16)
-    c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bk[None, :]
-    c_mask = (offs_am[:, None] < M) & (offs_bk[None, :] < K)
-    tl.store(c_ptrs, accumulator, mask=c_mask)
+	shifter = (offs_bk % infearure_per_bits) * bits
+	zeros_shifter = (offs_n % infearure_per_bits) * bits
+	accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_K), dtype=tl.float32)
+
+	for _ in range(0, num_pid_n):
+		# Fetch scales and zeros; these are per-outfeature and thus reused in the inner loop
+		scales = tl.load(scales_ptrs)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
+		zeros = tl.load(zeros_ptrs)  # (BLOCK_SIZE_K, BLOCK_SIZE_N,)
+
+		zeros = (zeros >> zeros_shifter[None, :]) & maxq
+		zeros = (zeros + 1)
+
+		a = tl.load(a_ptrs, mask=a_mask, other=0.)   # (BLOCK_SIZE_M, BLOCK_SIZE_N)
+		b = tl.load(b_ptrs)   # (BLOCK_SIZE_K, BLOCK_SIZE_N), but repeated
+
+		# Now we need to unpack b (which is N-bit values) into 32-bit values
+		b = (b >> shifter[:, None]) & maxq  # Extract the N-bit values
+		b = (b - zeros) * scales  # Scale and shift
+		b = tl.trans(b)
+
+		accumulator += tl.dot(a, b)
+		a_ptrs += BLOCK_SIZE_N
+		b_ptrs += BLOCK_SIZE_N
+		scales_ptrs += BLOCK_SIZE_N
+		zeros_ptrs += (BLOCK_SIZE_N // infearure_per_bits)
+
+	c = accumulator.to(tl.float16)
+	c_ptrs = c_ptr + stride_cm * offs_am[:, None] + stride_cn * offs_bk[None, :]
+	c_mask = (offs_am[:, None] < M) & (offs_bk[None, :] < K)
+	tl.store(c_ptrs, accumulator, mask=c_mask)
 
 def matmul248(input, qweight, scales, qzeros, g_idx, bits, maxq):
     with torch.cuda.device(input.device):
@@ -476,52 +474,54 @@ class QuantLinear(nn.Module):
             self.bias = None
         
     def pack(self, linear, scales, zeros, g_idx = None):
-        self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
-        
-        scales = scales.t().contiguous()
-        zeros = zeros.t().contiguous()
-        scale_zeros = zeros * scales
-        self.scales = scales.clone().half()
-        if linear.bias is not None:
-            self.bias = linear.bias.clone().half()
-            
-        intweight = []
-        for idx in range(self.infeatures):
-            intweight.append(torch.round((linear.weight.data[:,idx] + scale_zeros[self.g_idx[idx]]) / self.scales[self.g_idx[idx]]).to(torch.int)[:,None])
-        intweight = torch.cat(intweight,dim=1)
-        intweight = intweight.t().contiguous()
-        intweight = intweight.numpy().astype(np.uint32)
-        qweight = np.zeros((intweight.shape[0] // 32 * self.bits, intweight.shape[1]), dtype=np.uint32)
-        i = 0
-        row = 0
-        while row < qweight.shape[0]:
-            if self.bits in [2,4,8]:
-                for j in range(i, i + (32//self.bits)):
-                    qweight[row] |= intweight[j] << (self.bits * (j - i))
-                i += 32//self.bits
-                row += 1
-            else:
-                raise NotImplementedError("Only 2,4,8 bits are supported.")
-                
-        qweight = qweight.astype(np.int32)
-        self.qweight = torch.from_numpy(qweight) 
-        
-        zeros -= 1;
-        zeros = zeros.numpy().astype(np.uint32)
-        qzeros = np.zeros((zeros.shape[0], zeros.shape[1] // 32 * self.bits), dtype=np.uint32)
-        i = 0
-        col = 0
-        while col < qzeros.shape[1]:
-            if self.bits in [2,4,8]:
-                for j in range(i, i + (32//self.bits)):
-                    qzeros[:, col] |= zeros[:, j] << (self.bits * (j - i))
-                i += 32//self.bits
-                col += 1
-            else:
-                raise NotImplementedError("Only 2,4,8 bits are supported.")
-                
-        qzeros = qzeros.astype(np.int32)
-        self.qzeros = torch.from_numpy(qzeros) 
+    	self.g_idx = g_idx.clone() if g_idx is not None else self.g_idx
+
+    	scales = scales.t().contiguous()
+    	zeros = zeros.t().contiguous()
+    	scale_zeros = zeros * scales
+    	self.scales = scales.clone().half()
+    	if linear.bias is not None:
+    	    self.bias = linear.bias.clone().half()
+
+    	intweight = [
+    		torch.round(
+    			(linear.weight.data[:, idx] + scale_zeros[self.g_idx[idx]])
+    			/ self.scales[self.g_idx[idx]]
+    		).to(torch.int)[:, None]
+    		for idx in range(self.infeatures)
+    	]
+    	intweight = torch.cat(intweight,dim=1)
+    	intweight = intweight.t().contiguous()
+    	intweight = intweight.numpy().astype(np.uint32)
+    	qweight = np.zeros((intweight.shape[0] // 32 * self.bits, intweight.shape[1]), dtype=np.uint32)
+    	i = 0
+    	row = 0
+    	while row < qweight.shape[0]:
+    		if self.bits not in [2, 4, 8]:
+    			raise NotImplementedError("Only 2,4,8 bits are supported.")
+
+    		for j in range(i, i + (32//self.bits)):
+    		    qweight[row] |= intweight[j] << (self.bits * (j - i))
+    		i += 32//self.bits
+    		row += 1
+    	qweight = qweight.astype(np.int32)
+    	self.qweight = torch.from_numpy(qweight) 
+
+    	zeros -= 1;
+    	zeros = zeros.numpy().astype(np.uint32)
+    	qzeros = np.zeros((zeros.shape[0], zeros.shape[1] // 32 * self.bits), dtype=np.uint32)
+    	i = 0
+    	col = 0
+    	while col < qzeros.shape[1]:
+    		if self.bits not in [2, 4, 8]:
+    			raise NotImplementedError("Only 2,4,8 bits are supported.")
+
+    		for j in range(i, i + (32//self.bits)):
+    		    qzeros[:, col] |= zeros[:, j] << (self.bits * (j - i))
+    		i += 32//self.bits
+    		col += 1
+    	qzeros = qzeros.astype(np.int32)
+    	self.qzeros = torch.from_numpy(qzeros) 
         
     def forward(self, x):
         out_shape = x.shape[:-1] + (self.outfeatures, )
@@ -531,44 +531,50 @@ class QuantLinear(nn.Module):
         return out.reshape(out_shape)
         
 def make_quant_attn(model):
-    """
+	"""
     Replace all LlamaAttention modules with QuantLlamaAttention modules, fusing the q, k, v projections.
     """
-    for name, m in model.named_modules():
-        if not isinstance(m, LlamaAttention):
-            continue
+	for name, m in model.named_modules():
+		if not isinstance(m, LlamaAttention):
+		    continue
 
-        q_proj = m.q_proj
-        k_proj = m.k_proj
-        v_proj = m.v_proj
+		q_proj = m.q_proj
+		k_proj = m.k_proj
+		v_proj = m.v_proj
 
-        qweights = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
-        qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
-        scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
-        g_idx = torch.cat([q_proj.g_idx, k_proj.g_idx, v_proj.g_idx], dim=0)
-        bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
+		qweights = torch.cat([q_proj.qweight, k_proj.qweight, v_proj.qweight], dim=1)
+		qzeros = torch.cat([q_proj.qzeros, k_proj.qzeros, v_proj.qzeros], dim=1)
+		scales = torch.cat([q_proj.scales, k_proj.scales, v_proj.scales], dim=1)
+		g_idx = torch.cat([q_proj.g_idx, k_proj.g_idx, v_proj.g_idx], dim=0)
+		bias = torch.cat([q_proj.bias, k_proj.bias, v_proj.bias], dim=0) if q_proj.bias is not None else None
 
-        qkv_layer = QuantLinear(q_proj.bits, q_proj.groupsize, q_proj.infeatures, q_proj.outfeatures + k_proj.outfeatures + v_proj.outfeatures, True if q_proj.bias is not None else False)
-        qkv_layer.qweight = qweights
-        qkv_layer.qzeros = qzeros
-        qkv_layer.scales = scales
-        qkv_layer.g_idx = g_idx
-        qkv_layer.bias = bias
+		qkv_layer = QuantLinear(
+			q_proj.bits,
+			q_proj.groupsize,
+			q_proj.infeatures,
+			q_proj.outfeatures + k_proj.outfeatures + v_proj.outfeatures,
+			q_proj.bias is not None,
+		)
+		qkv_layer.qweight = qweights
+		qkv_layer.qzeros = qzeros
+		qkv_layer.scales = scales
+		qkv_layer.g_idx = g_idx
+		qkv_layer.bias = bias
 
-        attn = QuantLlamaAttention(m.hidden_size, m.num_heads, qkv_layer, m.o_proj, m.rotary_emb)
+		attn = QuantLlamaAttention(m.hidden_size, m.num_heads, qkv_layer, m.o_proj, m.rotary_emb)
 
-        if '.' in name:
-            parent_name = name.rsplit('.', 1)[0]
-            child_name = name[len(parent_name) + 1:]
-            parent = model.get_submodule(parent_name)
-        else:
-            parent_name = ''
-            parent = model
-            child_name = name
+		if '.' in name:
+		    parent_name = name.rsplit('.', 1)[0]
+		    child_name = name[len(parent_name) + 1:]
+		    parent = model.get_submodule(parent_name)
+		else:
+		    parent_name = ''
+		    parent = model
+		    child_name = name
 
-        #print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
+		#print(f"Replacing {name} with quant_attn; parent: {parent_name}, child's name: {child_name}")
 
-        setattr(parent, child_name, attn)
+		setattr(parent, child_name, attn)
 
 
 class QuantLlamaAttention(nn.Module):
@@ -684,26 +690,28 @@ def autotune_warmup(model, transpose = False):
     del kn_values
         
 def make_quant(module, names, bits, groupsize, name=''):
-    if isinstance(module, QuantLinear):
-        return
-    for attr in dir(module):
-        tmp = getattr(module, attr)
-        name1 = name + '.' + attr if name != '' else attr
-        if name1 in names:
-            delattr(module, attr)
-            setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
-    for name1, child in module.named_children():
-        make_quant(child, names, bits, groupsize, name + '.' + name1 if name != '' else name1)
+	if isinstance(module, QuantLinear):
+	    return
+	for attr in dir(module):
+		tmp = getattr(module, attr)
+		name1 = f'{name}.{attr}' if name != '' else attr
+		if name1 in names:
+		    delattr(module, attr)
+		    setattr(module, attr, QuantLinear(bits, groupsize, tmp.in_features, tmp.out_features, tmp.bias is not None))
+	for name1, child in module.named_children():
+		make_quant(
+			child, names, bits, groupsize, f'{name}.{name1}' if name != '' else name1
+		)
 
 def find_layers(module, layers=[nn.Conv2d, nn.Linear], name=''):
-    if type(module) in layers:
-        return {name: module}
-    res = {}
-    for name1, child in module.named_children():
-        res.update(find_layers(
-            child, layers=layers, name=name + '.' + name1 if name != '' else name1
-        ))
-    return res
+	if type(module) in layers:
+	    return {name: module}
+	res = {}
+	for name1, child in module.named_children():
+		res |= find_layers(
+			child, layers=layers, name=f'{name}.{name1}' if name != '' else name1
+		)
+	return res
 
 def load_quant(model_url, checkpoint, wbits, groupsize, device, warmup_autotune = True):
     from transformers import LlamaConfig, LlamaForCausalLM 

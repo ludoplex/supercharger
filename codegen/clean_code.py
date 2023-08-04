@@ -19,14 +19,20 @@ def only_defs_and_imports(code_string, strip_import_mods=[], strip_import_funcs=
         if isinstance(node, ast.FunctionDef):
             filtered_nodes.append(node)
         elif isinstance(node, ast.Import):
-            filtered_names = [name for name in node.names if not name.name in strip_import_mods]
-            if filtered_names:
+            if filtered_names := [
+                name
+                for name in node.names
+                if name.name not in strip_import_mods
+            ]:
                 node.names = filtered_names
                 filtered_nodes.append(node)
         elif isinstance(node, ast.ImportFrom):
             if node.module not in strip_import_mods:
-                filtered_names = [name for name in node.names if not name.name in strip_import_funcs]
-                if filtered_names:
+                if filtered_names := [
+                    name
+                    for name in node.names
+                    if name.name not in strip_import_funcs
+                ]:
                     node.names = filtered_names
                     filtered_nodes.append(node)
 
@@ -35,15 +41,13 @@ def only_defs_and_imports(code_string, strip_import_mods=[], strip_import_funcs=
 def remove_comments_before_first_function(script):
     # Match function definition pattern
     function_pattern = re.compile(r'^def .*\(', re.MULTILINE)
-    
-    # Find the index of the first function definition
-    match = function_pattern.search(script)
-    if match:
+
+    if match := function_pattern.search(script):
         start_index = match.start()
     else:
         # If there's no function definition, return the original script
         return script
-    
+
     # Remove line comments
     line_comment_pattern = re.compile(r'(?<=\n)#.*\n', re.MULTILINE)
     clean_script = line_comment_pattern.sub('\n', script[:start_index])

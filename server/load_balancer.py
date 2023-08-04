@@ -47,7 +47,6 @@ async def ask_endpoint(request: Request):
             return response_data
         except (aiohttp.ClientError, aiohttp.ClientResponseError):
             logging.info(f"Node unreachable: {node_url}")
-            pass
         finally:
             busy_nodes.remove(node)
 

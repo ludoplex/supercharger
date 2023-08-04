@@ -35,7 +35,7 @@ class DockerExecute:
         )
 
     def shutdown(self):
-        if not self.container is None:
+        if self.container is not None:
             self.container.stop()
             self.container.remove()
             self.container = None

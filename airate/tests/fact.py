@@ -1,8 +1,5 @@
 def recursive_factorial(n):
-    if n == 0:
-        return 1
-    else:
-        return n * recursive_factorial(n)
+    return 1 if n == 0 else n * recursive_factorial(n)
 
 # Example usage
 n = 5

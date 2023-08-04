@@ -3,8 +3,7 @@ from oracle import php_oracle
 
 def extract_functions(file_contents: str):
     function_regex = r"function\s+[a-zA-Z_][a-zA-Z0-9_]*\s*\("
-    functions = re.findall(function_regex, file_contents)
-    return functions
+    return re.findall(function_regex, file_contents)
 
 def airate_php(file_path, node="localhost", port=5000):
     markdown_str = ""

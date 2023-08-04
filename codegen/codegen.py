@@ -19,7 +19,7 @@ def comment_multiline_string(s: str) -> str:
         stripped_line = line.lstrip()
         whitespace = line[:len(line) - len(stripped_line)]
         if stripped_line and not stripped_line.startswith("#"):
-            commented_line = whitespace + "# " + stripped_line
+            commented_line = f"{whitespace}# {stripped_line}"
         else:
             commented_line = line
         commented_lines.append(commented_line)
@@ -38,23 +38,16 @@ def extract_function_name(function_def):
     for i, word in enumerate(words):
         if word == "def":
             function_name = words[i+1]
-            # Strip any trailing parentheses or whitespace
-            function_name = function_name.rstrip("() ")
-            return function_name
-
+            return function_name.rstrip("() ")
     raise Exception("No function name found")
 
 def get_script_name_from_function_name(function_name, is_test=False, variation=None):
     if variation is None:
-        if is_test:
-            return f"test_{function_name}.py"
-        else:
-            return f"{function_name}.py"
+        return f"test_{function_name}.py" if is_test else f"{function_name}.py"
+    if is_test:
+        return f"test_{function_name}_{variation}.py"
     else:
-        if is_test:
-            return f"test_{function_name}_{variation}.py"
-        else:
-            return f"{function_name}_{variation}.py"
+        return f"{function_name}_{variation}.py"
 
 def delete_old_scripts(sources_dirname, func_name):
     dir_path = os.path.join(sources_dirname, func_name)
@@ -105,27 +98,27 @@ def generate_requirements(project_path, output_file='requirements.txt'):
 
     if result.returncode == 0:
         return True
-    else:
-        logging.info(f"An error occurred while generating requirements.txt: {result}")
-        return False
+    logging.info(f"An error occurred while generating requirements.txt: {result}")
+    return False
 
 def install_container_requirements(sources_dirname, function_name, docker_execute):
     #logging.info("Installing container requirements.txt...")
 
     project_path = os.path.join(sources_dirname, function_name)
-    success = generate_requirements(project_path, output_file=os.path.join(project_path, f"requirements.txt"))
-
-    if success:
+    if success := generate_requirements(
+        project_path,
+        output_file=os.path.join(project_path, "requirements.txt"),
+    ):
         exit_code, logs = docker_execute.execute(command=f"pip install -r {function_name}/requirements.txt")
         if exit_code != 0:
             logging.info(f"An error occurred while installing requirements.txt: exit_code={exit_code} logs={logs}")
 
 def count_non_empty_strings(array):
-    count = 0
-    for item in array:
-        if item is not None and isinstance(item, str) and len(item) > 0:
-            count += 1
-    return count
+    return sum(
+        1
+        for item in array
+        if item is not None and isinstance(item, str) and len(item) > 0
+    )
 
 class CodeGen:
     def __init__(self, args):

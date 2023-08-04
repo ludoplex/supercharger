@@ -15,14 +15,13 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def load_model_llama(model_name="llama-65b-4bit", load_in_8bit=None):
-    if model_name == "llama-65b-4bit":
-        model_path = "catid/llama-65b-4bit"
-        model_load = "llama65b-4bit-128g.safetensors"
-        wbits = 4
-        groupsize = 128
-    else:
+    if model_name != "llama-65b-4bit":
         raise Exception("Unknown model_name={model_name}")
 
+    model_path = "catid/llama-65b-4bit"
+    model_load = "llama65b-4bit-128g.safetensors"
+    wbits = 4
+    groupsize = 128
     logging.info(f"Loading base_model={model_path}...")
 
     disable_torch_init()

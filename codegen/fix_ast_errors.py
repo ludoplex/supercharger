@@ -21,12 +21,7 @@ def detect_median_indentation(code):
         elif not in_comment:
             indentation_counts.append(len(line) - len(line.lstrip()))
 
-    if len(indentation_counts) > 0:
-        median_indentation = int(median(indentation_counts))
-    else:
-        median_indentation = 0
-
-    return median_indentation
+    return int(median(indentation_counts)) if indentation_counts else 0
 
 def check_error(code):
     try:
@@ -54,7 +49,7 @@ def indent_line(code, e, delta=1):
 
 def try_indenting(code, e, delta=1):
     orig_code = code
-    for i in range(1, 8):
+    for _ in range(1, 8):
         code = indent_line(code, e, delta=delta)
 
         #print(f"MODIFIED CODE: {code}")
@@ -126,9 +121,7 @@ def try_closing_delim(code, e, delim):
 
 def extract_mismatched_delimiters(error_message):
     pattern = r"closing parenthesis '(\S)' does not match opening parenthesis '(\S)'"
-    match = re.search(pattern, error_message)
-
-    if match:
+    if match := re.search(pattern, error_message):
         closing_char, opening_char = match.groups()
         return closing_char, opening_char
     else:
@@ -169,9 +162,10 @@ def try_replacing_closing_with_opening(code, e, closing_char, opening_char):
     return False, orig_code
 
 def parse_unbalanced_paren(error_message):
-    match = re.search(r"'(\(|\)|\[|\]|\{|\})' was never closed", error_message)
-    if match:
-        return match.group(1)
+    if match := re.search(
+        r"'(\(|\)|\[|\]|\{|\})' was never closed", error_message
+    ):
+        return match[1]
     return None
 
 def fix_ast_errors(code, max_attempts=100, expandtabs=True, delete_on_error=True):
@@ -205,8 +199,7 @@ def fix_ast_errors(code, max_attempts=100, expandtabs=True, delete_on_error=True
             elif "unexpected indent" in e.msg or "unindent does not match" in e.msg:
                 try_unindent = True
             elif "was never closed" in e.msg:
-                close_delim = parse_unbalanced_paren(e.msg)
-                if close_delim:
+                if close_delim := parse_unbalanced_paren(e.msg):
                     r, code = try_closing_delim(code, error, flip_opening_delimiters(close_delim))
                     if r: continue
             elif "does not match opening parenthesis" in e.msg:

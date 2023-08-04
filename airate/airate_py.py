@@ -15,7 +15,14 @@ def extract_functions_and_classes(file_path):
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             start_line = node.lineno - 1
-            end_line = max([item.lineno for item in ast.walk(node) if isinstance(item, ast.Expr)], default=start_line)
+            end_line = max(
+                (
+                    item.lineno
+                    for item in ast.walk(node)
+                    if isinstance(item, ast.Expr)
+                ),
+                default=start_line,
+            )
             functions_and_classes.append('\n'.join(content.splitlines()[start_line:end_line + 1]))
 
     return functions_and_classes
